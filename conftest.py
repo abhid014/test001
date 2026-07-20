@@ -13,6 +13,7 @@ import re
 import time
 import pytest
 from playwright.sync_api import sync_playwright
+import allure
 
 from utils.email_reporter import send_report
 from config import (
@@ -60,35 +61,69 @@ def browser(request):
 
 
 # ── Page fixture (fresh context per test) ─────────────────────────────────────
+
+
+# ── Directories (add these near your existing SS_DIR line) ───────────────────
+VIDEOS_DIR = os.path.join(BASE_DIR, "videos")
+TRACES_DIR = os.path.join(BASE_DIR, "traces")
+os.makedirs(VIDEOS_DIR, exist_ok=True)
+os.makedirs(TRACES_DIR, exist_ok=True)
+
+
 @pytest.fixture(scope="function")
 def page(browser, request):
-    """
-    Each test gets a brand-new browser context — no shared cookies,
-    localStorage, or auth state between tests.
-    """
     context = browser.new_context(
-        viewport={"width": VIEWPORT_W, "height": VIEWPORT_H}
+        viewport={"width": VIEWPORT_W, "height": VIEWPORT_H},
+        record_video_dir=VIDEOS_DIR,
+        record_video_size={"width": VIEWPORT_W, "height": VIEWPORT_H},
     )
+    context.tracing.start(screenshots=True, snapshots=True, sources=True)
+
     pg = context.new_page()
     yield pg
 
-    # ── Screenshot on failure ─────────────────────────────────────────────────
     rep_call = getattr(request.node, "rep_call", None)
-    if rep_call is not None and rep_call.failed:
-        safe = "".join(
-            c if c.isalnum() or c in "-_" else "_"
-            for c in request.node.name
-        )
-        ts   = time.strftime("%Y%m%d_%H%M%S")
-        path = os.path.join(SS_DIR, f"{safe}_{ts}.png")
+    failed = rep_call is not None and rep_call.failed
+
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in request.node.name)
+    ts   = time.strftime("%Y%m%d_%H%M%S")
+
+    # ── Screenshot (only on failure) ──────────────────────────────────────────
+    if failed:
+        ss_path = os.path.join(SS_DIR, f"{safe}_{ts}.png")
         try:
-            pg.screenshot(path=path, full_page=True)
-            print(f"\n📸  Screenshot saved: {path}")
-            request.node.screenshot_path = path
+            pg.screenshot(path=ss_path, full_page=True)
+            print(f"\n📸  Screenshot saved: {ss_path}")
+            request.node.screenshot_path = ss_path
+            allure.attach.file(ss_path, name="Screenshot", attachment_type=allure.attachment_type.PNG)
         except Exception as e:
             print(f"\n⚠️  Screenshot failed: {e}")
 
-    context.close()  # wipes all cookies → next test starts completely clean
+    # ── Tracing: stop and keep only if failed ─────────────────────────────────
+    trace_path = os.path.join(TRACES_DIR, f"{safe}_{ts}_trace.zip")
+    try:
+        if failed:
+            context.tracing.stop(path=trace_path)
+            allure.attach.file(trace_path, name="Trace", attachment_type="application/zip")
+        else:
+            context.tracing.stop()  # discard, no path = don't save
+    except Exception as e:
+        print(f"\n⚠️  Trace handling failed: {e}")
+
+    video = pg.video  # grab reference before closing context
+    context.close()   # video file is only finalized after this
+
+    # ── Video: keep only if failed, delete otherwise ──────────────────────────
+    if video:
+        try:
+            if failed:
+                video_path = os.path.join(VIDEOS_DIR, f"{safe}_{ts}.webm")
+                os.replace(video.path(), video_path)
+                allure.attach.file(video_path, name="Video", attachment_type=allure.attachment_type.WEBM)
+            else:
+                os.remove(video.path())
+        except Exception as e:
+            print(f"\n⚠️  Video handling failed: {e}")
 
 
 # ── Pytest hooks ──────────────────────────────────────────────────────────────

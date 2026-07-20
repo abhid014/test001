@@ -1,4 +1,8 @@
 .env
 screenshots/
+videos/
+traces/
+allure-results/
+allure-report/
 __pycache__/
-*.pyc
+*.pyc   
