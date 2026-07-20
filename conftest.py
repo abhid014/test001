@@ -41,16 +41,18 @@ _session_start: float = 0.0
 @pytest.fixture(scope="session")
 def browser(request):
     with sync_playwright() as p:
-        # CI: HEADLESS env var always takes priority
+        # Priority: explicit HEADLESS env var > CI auto-detect > default (headed, local)
         env_value = os.environ.get("HEADLESS", "").strip().lower()
 
         if env_value:
-            # Explicitly set via environment variable (used in CI)
+            # Explicitly set — always wins, whether local or CI
             headless = env_value == "true"
+        elif os.environ.get("CI"):
+            # GitHub Actions sets CI=true automatically — no manual config needed
+            headless = True
         else:
-            # Fall back to --headed flag from pytest.ini / command line (local)
-            headed_flag = request.config.getoption("--headed", default=False)
-            headless = not headed_flag
+            # Local run, nothing set — default to headed so you can watch it
+            headless = False
 
         b = p.chromium.launch(headless=headless)
         yield b
@@ -165,7 +167,7 @@ def pytest_sessionfinish(session, exitstatus):
         )
     except Exception as e:
         print(f"\n⚠️  Email failed: {e}")
-        print("    Check SENDER_PASSWORD in your .env file")
+        print("    Check SENDER_PASSWORD in your .env file")    
 
 
 def pytest_collection_modifyitems(config, items):
