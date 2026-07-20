@@ -1,0 +1,32 @@
+[
+  {
+    "name": "⏱️ Timeouts",
+    "messageRegex": ".*[Tt]imeout.*|.*timed out.*",
+    "matchedStatuses": ["failed", "broken"]
+  },
+  {
+    "name": "🔴 Assertion Failures",
+    "messageRegex": ".*AssertionError.*|.*assert.*",
+    "matchedStatuses": ["failed"]
+  },
+  {
+    "name": "🔍 Element Not Found",
+    "messageRegex": ".*[Ll]ocator.*|.*element.*not found.*|.*not visible.*",
+    "matchedStatuses": ["failed", "broken"]
+  },
+  {
+    "name": "🌐 Navigation Errors",
+    "messageRegex": ".*[Nn]avigation.*|.*goto.*|.*net::.*",
+    "matchedStatuses": ["failed", "broken"]
+  },
+  {
+    "name": "⚠️ Product Defects",
+    "messageRegex": ".*",
+    "matchedStatuses": ["failed"]
+  },
+  {
+    "name": "💥 Test Infrastructure Errors",
+    "messageRegex": ".*",
+    "matchedStatuses": ["broken"]
+  }
+]

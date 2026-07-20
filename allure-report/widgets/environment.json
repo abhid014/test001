@@ -1,0 +1,1 @@
+[{"values":["SmartApp"],"name":"Application"},{"values":["QA"],"name":"Environment"},{"values":["Chromium"],"name":"Browser"},{"values":["https://central.smartappqa.com/"],"name":"Base.URL"},{"values":["2026-06-21 18:33:28"],"name":"Run.Date"},{"values":["Playwright + pytest"],"name":"Framework"},{"values":["QA Automation"],"name":"Team"}]
