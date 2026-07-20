@@ -14,6 +14,9 @@ import time
 import pytest
 from playwright.sync_api import sync_playwright
 import allure
+import shutil
+import subprocess
+import pytest_html  
 
 from utils.email_reporter import send_report
 from config import (
@@ -96,6 +99,12 @@ def page(browser, request):
             print(f"\n📸  Screenshot saved: {ss_path}")
             request.node.screenshot_path = ss_path
             allure.attach.file(ss_path, name="Screenshot", attachment_type=allure.attachment_type.PNG)
+
+            # ── Attach to pytest-html report ──────────────────────────────────
+            if rep_call is not None:
+                extra = getattr(rep_call, "extra", [])
+                extra.append(pytest_html.extras.image(ss_path))
+                rep_call.extra = extra
         except Exception as e:
             print(f"\n⚠️  Screenshot failed: {e}")
 
@@ -170,39 +179,29 @@ def pytest_runtest_teardown(item, nextitem):
 
 
 def pytest_sessionfinish(session, exitstatus):
-    """Build and send the HTML email report once all tests finish (local runs only)."""
     if not _results:
         print("\nNo results collected — skipping email.")
         return
 
     if os.environ.get("CI"):
         print("\nCI run detected — skipping email report (local-only feature).")
-        return
-
-    if not SENDER_PASSWORD:
+    elif not SENDER_PASSWORD:
         print("\n⚠️  SENDER_PASSWORD not set — skipping email. Check your .env file.")
-        return
+    else:
+        duration = round(time.time() - _session_start, 2)
+        clean = [{k: v for k, v in r.items() if not k.startswith("_")} for r in _results]
+        try:
+            send_report(
+                results=clean, duration=duration,
+                smtp_host=SMTP_HOST, smtp_port=SMTP_PORT,
+                sender_email=SENDER_EMAIL, sender_password=SENDER_PASSWORD,
+                recipients=EMAIL_RECIPIENTS, subject=EMAIL_SUBJECT,
+            )
+        except Exception as e:
+            print(f"\n⚠️  Email failed: {e}")
+            print("    Check SENDER_PASSWORD in your .env file")
 
-    duration = round(time.time() - _session_start, 2)
-    clean    = [
-        {k: v for k, v in r.items() if not k.startswith("_")}
-        for r in _results
-    ]
-
-    try:
-        send_report(
-            results          = clean,
-            duration         = duration,
-            smtp_host        = SMTP_HOST,
-            smtp_port        = SMTP_PORT,
-            sender_email     = SENDER_EMAIL,
-            sender_password  = SENDER_PASSWORD,
-            recipients       = EMAIL_RECIPIENTS,
-            subject          = EMAIL_SUBJECT,
-        )
-    except Exception as e:
-        print(f"\n⚠️  Email failed: {e}")
-        print("    Check SENDER_PASSWORD in your .env file")    
+    _generate_allure_zip()  
 
 
 def pytest_collection_modifyitems(config, items):
@@ -210,3 +209,29 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         item._nodeid = re.sub(r"\[.*\]$", "", item.nodeid)
         item.name    = re.sub(r"\[.*\]$", "", item.name)
+        
+ALLURE_RESULTS_DIR = os.path.join(BASE_DIR, "allure-results")
+ALLURE_REPORT_DIR  = os.path.join(BASE_DIR, "allure-report")
+ALLURE_ZIP_PATH    = os.path.join(BASE_DIR, "allure-report")  # shutil adds .zip automatically
+
+
+def _generate_allure_zip():
+    """Generate the Allure HTML report and zip it into allure-report.zip."""
+    if not os.path.exists(ALLURE_RESULTS_DIR):
+        print("\n⚠️  No allure-results found — skipping Allure zip.")
+        return
+
+    try:
+        subprocess.run(
+            ["allure", "generate", ALLURE_RESULTS_DIR, "--clean", "-o", ALLURE_REPORT_DIR],
+            check=True,
+            shell=True,  # needed on Windows so it finds allure.bat / allure.cmd on PATH
+        )
+        shutil.make_archive(ALLURE_ZIP_PATH, "zip", ALLURE_REPORT_DIR)
+        print(f"\n📦  Allure report zipped: {ALLURE_ZIP_PATH}.zip")
+    except FileNotFoundError:
+        print("\n⚠️  'allure' command not found — is Allure commandline installed and on PATH?")
+    except subprocess.CalledProcessError as e:
+        print(f"\n⚠️  Allure generate failed: {e}")
+    except Exception as e:
+        print(f"\n⚠️  Allure zip step failed: {e}")

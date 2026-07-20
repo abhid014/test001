@@ -4,5 +4,6 @@ videos/
 traces/
 allure-results/
 allure-report/
+allure-report.zip
 __pycache__/
-*.pyc   
+*.pyc
